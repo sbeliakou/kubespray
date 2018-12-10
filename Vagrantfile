@@ -32,7 +32,7 @@ $num_instances = 3
 $instance_name_prefix = "k8s"
 $vm_gui = false
 $vm_memory = 2048
-$vm_cpus = 1
+$vm_cpu_shares = 30
 $shared_folders = {}
 $forwarded_ports = {}
 $subnet = "172.17.8"
@@ -40,12 +40,6 @@ $os = "ubuntu1804"
 $network_plugin = "flannel"
 # Setting multi_networking to true will install Multus: https://github.com/intel/multus-cni
 $multi_networking = false
-# The first three nodes are etcd servers
-$etcd_instances = $num_instances
-# The first two nodes are kube masters
-$kube_master_instances = $num_instances == 1 ? $num_instances : ($num_instances - 1)
-# All nodes are kube nodes
-$kube_node_instances = $num_instances
 # The following only works when using the libvirt provider
 $kube_node_instances_with_disks = false
 $kube_node_instances_with_disks_size = "20G"
@@ -58,6 +52,13 @@ host_vars = {}
 if File.exist?(CONFIG)
   require CONFIG
 end
+
+# The first three nodes are etcd servers
+$etcd_instances = $num_instances
+# The first two nodes are kube masters
+$kube_master_instances = $num_instances == 1 ? $num_instances : ($num_instances - 1)
+# All nodes are kube nodes
+$kube_node_instances = $num_instances
 
 $box = SUPPORTED_OS[$os][:box]
 # if $inventory is not set, try to use example
@@ -117,9 +118,10 @@ Vagrant.configure("2") do |config|
 
       node.vm.provider :virtualbox do |vb|
         vb.memory = $vm_memory
-        vb.cpus = $vm_cpus
+        # vb.cpus = $vm_cpus
         vb.gui = $vm_gui
         vb.linked_clone = true
+        vb.customize ["modifyvm", :id, "--cpuexecutioncap", $vm_cpu_shares]
       end
 
       node.vm.provider :libvirt do |lv|
@@ -161,16 +163,20 @@ Vagrant.configure("2") do |config|
       node.vm.network :private_network, ip: ip
 
       # Disable swap for each vm
-      node.vm.provision "shell", inline: "swapoff -a"
+      node.vm.provision "shell", inline: "swapoff -a; sed -i '/swap/d' /etc/fstab"
 
       host_vars[vm_name] = {
         "ip": ip,
         "kube_network_plugin": $network_plugin,
         "kube_network_plugin_multus": $multi_networking,
         "docker_keepcache": "1",
-        "download_run_once": "True",
-        "download_localhost": "False"
+        "download_run_once": "False",
+        "download_localhost": "False",
+        "kubeconfig_localhost": "True",
+        "kube_version": "v1.10.7"
       }
+
+
 
       # Only execute the Ansible provisioner once, when all the machines are up and ready.
       if i == $num_instances
@@ -182,7 +188,7 @@ Vagrant.configure("2") do |config|
           ansible.become = true
           ansible.limit = "all"
           ansible.host_key_checking = false
-          ansible.raw_arguments = ["--forks=#{$num_instances}", "--flush-cache", "--ask-become-pass"]
+          ansible.raw_arguments = ["--forks=#{$num_instances}", "--flush-cache", "-vv"]
           ansible.host_vars = host_vars
           #ansible.tags = ['download']
           ansible.groups = {
