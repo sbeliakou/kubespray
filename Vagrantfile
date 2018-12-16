@@ -32,6 +32,7 @@ $num_instances = 3
 $instance_name_prefix = "k8s"
 $vm_gui = false
 $vm_memory = 2048
+$vm_cpus = 1
 $vm_cpu_shares = 30
 $shared_folders = {}
 $forwarded_ports = {}
@@ -54,7 +55,7 @@ if File.exist?(CONFIG)
 end
 
 # The first three nodes are etcd servers
-$etcd_instances = $num_instances
+$etcd_instances = $num_instances >=3 ? 3 : 1
 # The first two nodes are kube masters
 $kube_master_instances = $num_instances == 1 ? $num_instances : ($num_instances - 1)
 # All nodes are kube nodes
@@ -176,8 +177,6 @@ Vagrant.configure("2") do |config|
         "kube_version": "v1.10.7"
       }
 
-
-
       # Only execute the Ansible provisioner once, when all the machines are up and ready.
       if i == $num_instances
         node.vm.provision "ansible" do |ansible|
@@ -199,7 +198,6 @@ Vagrant.configure("2") do |config|
           }
         end
       end
-
     end
   end
 end
